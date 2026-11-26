@@ -130,7 +130,7 @@ describe('stream handling (fake CLI)', () => {
     }
   }
 
-  it('does not record the fork source as workspace history on init, result or a stopped turn', async (t) => {
+  it('keeps the fork source personal and guest results out of the owner session on normal and stopped turns', async (t) => {
     const fs = require('fs'), path = require('path'), os = require('os');
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'oa-fork-ids-'));
     const saved = process.env.OPENAGENTS_HOME;
@@ -156,6 +156,18 @@ describe('stream handling (fake CLI)', () => {
     await settle(pp);
     assert.equal(adapter._channelSessions.general, 'fork-id');
     assert.equal(fs.readFileSync(ids, 'utf8').trim(), 'fork-id');
+
+    // A guest process can finish after the channel has returned to its owner.
+    const guest = attach(adapter);
+    guest.pp.spawnMode = 'guest';
+    for (const [sessionId, stopped] of [['guest-id', false], ['stopped-guest-id', true]]) {
+      guest.pp.userStopped = stopped;
+      guest.pp.messageResolve = () => {};
+      guest.proc.emitLine({ type: 'result', session_id: sessionId });
+      await settle(guest.pp);
+      assert.equal(adapter._channelSessions.general, 'fork-id');
+    }
+    assert.deepEqual(fs.readFileSync(ids, 'utf8').trim().split('\n'), ['fork-id', 'guest-id', 'stopped-guest-id']);
   });
 
   it('attaches the CLI-reported response model and clears it for the next turn', async () => {
